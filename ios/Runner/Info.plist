@@ -5,7 +5,7 @@
 		<key>CFBundleDevelopmentRegion</key>
 		<string>$(DEVELOPMENT_LANGUAGE)</string>
 		<key>CFBundleDisplayName</key>
-		<string>Admin App</string>
+		<string>LegaCy Admin</string>
 		<key>CFBundleExecutable</key>
 		<string>$(EXECUTABLE_NAME)</string>
 		<key>CFBundleIdentifier</key>
@@ -49,5 +49,21 @@
 		<true/>
 		<key>UIViewControllerBasedStatusBarAppearance</key>
 		<false/>
+		<key>NSCameraUsageDescription</key>
+		<string>We need access to your camera to take product photos and scan barcodes.</string>
+		<key>NSPhotoLibraryUsageDescription</key>
+		<string>We need access to your photo library to select product images and upload them.</string>
+		<key>NSPhotoLibraryAddUsageDescription</key>
+		<string>We need permission to save receipts, invoices, and reports to your photo gallery.</string>
+		<key>ITSAppUsesNonExemptEncryption</key>
+		<false/>
+		<key>LSApplicationQueriesSchemes</key>
+		<array>
+			<string>https</string>
+			<string>http</string>
+			<string>tel</string>
+			<string>mailto</string>
+			<string>whatsapp</string>
+		</array>
 	</dict>
 </plist>

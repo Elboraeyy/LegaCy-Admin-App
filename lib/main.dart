@@ -40,9 +40,13 @@ void main() async {
   // Initialize UnreadTracker
   await UnreadTracker.init();
 
-  // Initialize Firebase and messaging
-  await Firebase.initializeApp();
-  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  // Initialize Firebase and messaging safely
+  try {
+    await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+  } catch (e) {
+    debugPrint('Firebase initialization warning: $e');
+  }
 
   runApp(
     MultiProvider(
