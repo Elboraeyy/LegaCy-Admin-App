@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "28093217946",
+    "project_id": "legacy-5e970",
+    "storage_bucket": "legacy-5e970.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:28093217946:android:27990473dcf7167764f323",
+        "android_client_info": {
+          "package_name": "com.legacy.admin_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBuhL8v4gatVe-jmhxdRKKYfdkhlwBjFPg"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
