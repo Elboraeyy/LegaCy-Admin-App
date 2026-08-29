@@ -27,18 +27,30 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   // Set status bar style
-  SystemChrome.setSystemUIOverlayStyle(
-    const SystemUiOverlayStyle(
-      statusBarColor: Colors.transparent,
-      statusBarIconBrightness: Brightness.light,
-    ),
-  );
+  try {
+    SystemChrome.setSystemUIOverlayStyle(
+      const SystemUiOverlayStyle(
+        statusBarColor: Colors.transparent,
+        statusBarIconBrightness: Brightness.light,
+      ),
+    );
+  } catch (e) {
+    debugPrint('SystemUIOverlayStyle error: $e');
+  }
 
-  // Initialize notification service
-  await NotificationService.instance.initialize();
+  // Initialize notification service safely
+  try {
+    await NotificationService.instance.initialize();
+  } catch (e) {
+    debugPrint('NotificationService init error: $e');
+  }
 
-  // Initialize UnreadTracker
-  await UnreadTracker.init();
+  // Initialize UnreadTracker safely
+  try {
+    await UnreadTracker.init();
+  } catch (e) {
+    debugPrint('UnreadTracker init error: $e');
+  }
 
   // Initialize Firebase and messaging safely
   try {
@@ -77,13 +89,19 @@ class _LegacyAdminAppState extends State<LegacyAdminApp> {
   }
 
   Future<void> _init() async {
-    // Try to restore saved session while allowing splash animation to play (min 2.5s)
-    await Future.wait([
-      context.read<AuthProvider>().tryAutoLogin(),
-      Future.delayed(const Duration(milliseconds: 2500)),
-    ]);
-    if (mounted) {
-      setState(() => _initialized = true);
+    try {
+      await Future.wait([
+        context.read<AuthProvider>().tryAutoLogin().catchError((e) {
+          debugPrint('tryAutoLogin error: $e');
+        }),
+        Future.delayed(const Duration(milliseconds: 2000)),
+      ]);
+    } catch (e) {
+      debugPrint('App init error: $e');
+    } finally {
+      if (mounted) {
+        setState(() => _initialized = true);
+      }
     }
   }
 

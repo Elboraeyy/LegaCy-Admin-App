@@ -80,38 +80,51 @@ class NotificationService {
   Future<void> initialize() async {
     if (_initialized) return;
 
-    const androidInit = AndroidInitializationSettings('@mipmap/launcher_icon');
-    const initSettings = InitializationSettings(android: androidInit);
+    try {
+      const androidInit = AndroidInitializationSettings('@mipmap/launcher_icon');
+      const darwinInit = DarwinInitializationSettings(
+        requestAlertPermission: true,
+        requestBadgePermission: true,
+        requestSoundPermission: true,
+      );
+      const initSettings = InitializationSettings(
+        android: androidInit,
+        iOS: darwinInit,
+        macOS: darwinInit,
+      );
 
-    await _plugin.initialize(
-      settings: initSettings,
-      onDidReceiveNotificationResponse: (response) {
-        onNotificationTap.add(response.payload);
-      },
-    );
+      await _plugin.initialize(
+        settings: initSettings,
+        onDidReceiveNotificationResponse: (response) {
+          onNotificationTap.add(response.payload);
+        },
+      );
 
-    // Create all notification channels
-    final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
-    if (androidPlugin != null) {
-      // Request notification permission (Android 13+)
-      await androidPlugin.requestNotificationsPermission();
+      // Create all notification channels on Android
+      final androidPlugin = _plugin.resolvePlatformSpecificImplementation<AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        // Request notification permission (Android 13+)
+        await androidPlugin.requestNotificationsPermission();
 
-      for (final entry in _channels.entries) {
-        final def = entry.value;
-        await androidPlugin.createNotificationChannel(
-          AndroidNotificationChannel(
-            def.id,
-            def.name,
-            description: def.description,
-            importance: def.importance,
-            enableVibration: true,
-            playSound: true,
-            showBadge: true,
-            enableLights: true,
-            ledColor: const Color(0xFF12403C),
-          ),
-        );
+        for (final entry in _channels.entries) {
+          final def = entry.value;
+          await androidPlugin.createNotificationChannel(
+            AndroidNotificationChannel(
+              def.id,
+              def.name,
+              description: def.description,
+              importance: def.importance,
+              enableVibration: true,
+              playSound: true,
+              showBadge: true,
+              enableLights: true,
+              ledColor: const Color(0xFF12403C),
+            ),
+          );
+        }
       }
+    } catch (e) {
+      debugPrint('NotificationService initialization warning: $e');
     }
 
     _initialized = true;
@@ -150,11 +163,21 @@ class NotificationService {
       autoCancel: true,
     );
 
+    const darwinDetails = DarwinNotificationDetails(
+      presentAlert: true,
+      presentBadge: true,
+      presentSound: true,
+    );
+
     await _plugin.show(
       id: id,
       title: title,
       body: body,
-      notificationDetails: NotificationDetails(android: androidDetails),
+      notificationDetails: NotificationDetails(
+        android: androidDetails,
+        iOS: darwinDetails,
+        macOS: darwinDetails,
+      ),
       payload: payload,
     );
   }
