@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:admin_app/core/config/api_config.dart';
@@ -18,9 +19,11 @@ class ApiClient {
 
   /// Generic GET request
   Future<Map<String, dynamic>> get(String path) async {
-    final response = await http
-        .get(_uri(path), headers: _headers)
-        .timeout(ApiConfig.connectionTimeout);
+    final response = await _withTimeout(
+      http.get(_uri(path), headers: _headers),
+      ApiConfig.connectionTimeout,
+      'Request',
+    );
     return _handleResponse(response);
   }
 
@@ -29,9 +32,11 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? body,
   }) async {
-    final response = await http
-        .post(_uri(path), headers: _headers, body: jsonEncode(body))
-        .timeout(ApiConfig.connectionTimeout);
+    final response = await _withTimeout(
+      http.post(_uri(path), headers: _headers, body: jsonEncode(body)),
+      ApiConfig.mutationTimeout,
+      'Request',
+    );
     return _handleResponse(response);
   }
 
@@ -40,9 +45,11 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? body,
   }) async {
-    final response = await http
-        .put(_uri(path), headers: _headers, body: jsonEncode(body))
-        .timeout(ApiConfig.connectionTimeout);
+    final response = await _withTimeout(
+      http.put(_uri(path), headers: _headers, body: jsonEncode(body)),
+      ApiConfig.mutationTimeout,
+      'Request',
+    );
     return _handleResponse(response);
   }
 
@@ -51,17 +58,21 @@ class ApiClient {
     String path, {
     Map<String, dynamic>? body,
   }) async {
-    final response = await http
-        .patch(_uri(path), headers: _headers, body: jsonEncode(body))
-        .timeout(ApiConfig.connectionTimeout);
+    final response = await _withTimeout(
+      http.patch(_uri(path), headers: _headers, body: jsonEncode(body)),
+      ApiConfig.mutationTimeout,
+      'Request',
+    );
     return _handleResponse(response);
   }
 
   /// Generic DELETE request
   Future<Map<String, dynamic>> delete(String path) async {
-    final response = await http
-        .delete(_uri(path), headers: _headers)
-        .timeout(ApiConfig.connectionTimeout);
+    final response = await _withTimeout(
+      http.delete(_uri(path), headers: _headers),
+      ApiConfig.mutationTimeout,
+      'Request',
+    );
     return _handleResponse(response);
   }
 
@@ -83,13 +94,44 @@ class ApiClient {
     
     request.files.add(await http.MultipartFile.fromPath(fileField, filePath));
     
-    final streamedResponse = await request.send().timeout(ApiConfig.connectionTimeout);
-    final response = await http.Response.fromStream(streamedResponse);
+    final streamedResponse = await _withTimeout(
+      request.send(),
+      ApiConfig.uploadTimeout,
+      'Image upload',
+    );
+    final response = await _withTimeout(
+      http.Response.fromStream(streamedResponse),
+      ApiConfig.uploadTimeout,
+      'Image upload response',
+    );
     return _handleResponse(response);
   }
 
+  Future<T> _withTimeout<T>(
+    Future<T> request,
+    Duration timeout,
+    String operation,
+  ) async {
+    try {
+      return await request.timeout(timeout);
+    } on TimeoutException {
+      throw ApiException(
+        statusCode: 408,
+        message: '$operation timed out. Please check your connection and try again.',
+      );
+    }
+  }
+
   Map<String, dynamic> _handleResponse(http.Response response) {
-    final body = jsonDecode(response.body) as Map<String, dynamic>;
+    Map<String, dynamic> body;
+    try {
+      final decoded = jsonDecode(response.body);
+      body = decoded is Map
+          ? Map<String, dynamic>.from(decoded)
+          : <String, dynamic>{};
+    } catch (_) {
+      body = <String, dynamic>{};
+    }
 
     if (response.statusCode >= 200 && response.statusCode < 300) {
       return body;

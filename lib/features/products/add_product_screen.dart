@@ -67,6 +67,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
   List<Map<String, dynamic>> _relatedProducts = [];
 
   bool _loadingOpts = true, _saving = false;
+  String? _optionsError;
+  bool _loadingFullProduct = false;
   DateTime _purchaseDate = DateTime.now();
 
   bool get _isEdit => widget.product != null && widget.product!['id'] != null;
@@ -76,6 +78,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
     super.initState();
     if (widget.product != null) {
       _prefill(widget.product!);
+      _loadingFullProduct = _isEdit;
       _loadFullProduct(widget.product!['id']?.toString());
     }
     _loadOptions();
@@ -85,37 +88,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
     if (productId == null) return;
     try {
       final client = ApiClient(token: context.read<AuthProvider>().token);
-      final data = await client.get('/api/products/$productId');
+      final response = await client.get(
+        '${ApiConfig.authProductsEndpoint}/$productId',
+      );
+      final rawProduct = response['product'];
+      final data = rawProduct is Map
+          ? Map<String, dynamic>.from(rawProduct)
+          : response;
       if (!mounted) return;
-
-      final sim = data['similarProducts'] as List<dynamic>?;
-      if (sim != null && sim.isNotEmpty) {
-        setState(() {
-          _relatedProducts = sim
-              .map(
-                (sp) => <String, dynamic>{
-                  'id': sp['id'].toString(),
-                  'name': sp['name'].toString(),
-                  'image': sp['imageUrl']?.toString(),
-                },
-              )
-              .toList();
-
-          final order = data['orderedSimilarIds'] as List<dynamic>?;
-          if (order != null && order.isNotEmpty) {
-            _relatedProducts.sort((a, b) {
-              final idxA = order.indexOf(a['id']);
-              final idxB = order.indexOf(b['id']);
-              if (idxA == -1 && idxB == -1) return 0;
-              if (idxA == -1) return 1;
-              if (idxB == -1) return -1;
-              return idxA.compareTo(idxB);
-            });
-          }
-        });
+      setState(() => _prefill(data));
+    } catch (e) {
+      // The product passed by the list is still usable, so keep it as the
+      // fallback and only show an error if the full edit payload is needed.
+      if (mounted) {
+        _snack(
+          e is ApiException
+              ? 'Could not load full product details: ${e.message}'
+              : 'Failed to load the full product details.',
+        );
       }
-    } catch (_) {
-      // silently fail - similar products are optional
+    } finally {
+      if (mounted) setState(() => _loadingFullProduct = false);
     }
   }
 
@@ -150,15 +143,24 @@ class _AddProductScreenState extends State<AddProductScreen> {
     }
     _minStockCtrl.text = prefilledMinStock;
 
-    _status = p['status'] ?? 'active';
+    _status = p['status']?.toString() ?? _status;
     _catId = p['categoryId']?.toString() ?? p['categoryRel']?['id']?.toString();
     _brandId = p['brandId']?.toString() ?? p['brand']?['id']?.toString();
     _matId = p['materialId']?.toString() ?? p['material']?['id']?.toString();
     _suppId = p['supplierId']?.toString();
 
-    _imageUrl = p['imageUrl'];
-    if (p['images'] != null) {
-      _gallery = (p['images'] as List).map((i) => i['url'].toString()).toList();
+    final imageUrl = p['imageUrl']?.toString();
+    _imageUrl = imageUrl?.trim().isNotEmpty == true ? imageUrl : null;
+    final rawImages = p['images'] ?? p['gallery'];
+    if (rawImages is List) {
+      _gallery = rawImages
+          .map((image) {
+            if (image is String) return image;
+            if (image is Map) return image['url']?.toString() ?? '';
+            return '';
+          })
+          .where((url) => url.trim().isNotEmpty)
+          .toList();
     }
 
     _newArrivals = p['showInNewArrivals'] ?? true;
@@ -168,18 +170,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
     _metaDescCtrl.text = p['metaDescription'] ?? '';
 
     final s = p['specs'];
-    if (s != null) {
-      _dialSizeCtrl.text = s['dialSize'] ?? '';
-      _dialColorCtrl.text = s['dialColor'] ?? '';
-      _caseColorCtrl.text = s['caseColor'] ?? '';
-      _caseCtrl.text = s['case'] ?? '';
-      _strapMatCtrl.text = s['strapMaterial'] ?? '';
-      _strapColCtrl.text = s['strapColor'] ?? '';
-      _strapWidthCtrl.text = s['strapWidth'] ?? '';
-      _movementCtrl.text = s['movement'] ?? '';
-      _glassCtrl.text = s['glass'] ?? '';
-      _waterCtrl.text = s['waterResistance'] ?? '';
-      _hourMarkersCtrl.text = s['hourMarkers'] ?? '';
+    if (s is Map) {
+      _dialSizeCtrl.text = s['dialSize']?.toString() ?? '';
+      _dialColorCtrl.text = s['dialColor']?.toString() ?? '';
+      _caseColorCtrl.text = s['caseColor']?.toString() ?? '';
+      _caseCtrl.text = s['case']?.toString() ?? '';
+      _strapMatCtrl.text = s['strapMaterial']?.toString() ?? '';
+      _strapColCtrl.text = s['strapColor']?.toString() ?? '';
+      _strapWidthCtrl.text = s['strapWidth']?.toString() ?? '';
+      _movementCtrl.text = s['movement']?.toString() ?? '';
+      _glassCtrl.text = s['glass']?.toString() ?? '';
+      _waterCtrl.text = s['waterResistance']?.toString() ?? '';
+      _hourMarkersCtrl.text = s['hourMarkers']?.toString() ?? '';
       _supplierPriceCtrl.text = s['supplierPrice']?.toString() ?? '';
       _costCtrl.text = s['additionalCosts']?.toString() ?? '';
     }
@@ -187,20 +189,20 @@ class _AddProductScreenState extends State<AddProductScreen> {
     final sim = p['similarProducts'] as List<dynamic>?;
     if (sim != null) {
       _relatedProducts = sim
+          .whereType<Map>()
           .map(
             (sp) => <String, dynamic>{
-              'id': sp['id'].toString(),
-              'name': sp['name'].toString(),
-              'image':
-                  sp['imageUrl'] ??
-                  (sp['images']?.isNotEmpty == true
-                      ? sp['images'][0]['url']
-                      : null),
+              'id': sp['id']?.toString() ?? '',
+              'name': sp['name']?.toString() ?? '',
+              'image': _similarProductImage(sp),
             },
           )
+          .where((product) => (product['id'] as String).isNotEmpty)
           .toList();
 
-      final order = p['orderedSimilarIds'] as List<dynamic>?;
+      final order = (p['orderedSimilarIds'] as List<dynamic>?)
+          ?.map((id) => id.toString())
+          .toList();
       if (order != null && order.isNotEmpty) {
         _relatedProducts.sort((a, b) {
           final idxA = order.indexOf(a['id']);
@@ -212,6 +214,18 @@ class _AddProductScreenState extends State<AddProductScreen> {
         });
       }
     }
+  }
+
+  String? _similarProductImage(Map product) {
+    final direct = product['imageUrl']?.toString();
+    if (direct != null && direct.trim().isNotEmpty) return direct;
+    final images = product['images'];
+    if (images is List && images.isNotEmpty) {
+      final first = images.first;
+      if (first is String) return first;
+      if (first is Map) return first['url']?.toString();
+    }
+    return null;
   }
 
   @override
@@ -254,33 +268,57 @@ class _AddProductScreenState extends State<AddProductScreen> {
         '${ApiConfig.authProductsEndpoint}/options',
       );
       if (mounted) {
+        final cats = List<dynamic>.from(data['categories'] ?? const []);
+        final brands = List<dynamic>.from(data['brands'] ?? const []);
+        final mats = List<dynamic>.from(data['materials'] ?? const []);
+        final supps = List<dynamic>.from(data['suppliers'] ?? const []);
         setState(() {
-          _cats = data['categories'];
-          _brands = data['brands'];
-          _mats = data['materials'];
-          _supps = data['suppliers'];
+          _cats = cats;
+          _brands = brands;
+          _mats = mats;
+          _supps = supps;
+          if (!_containsOption(cats, _catId)) _catId = null;
+          if (!_containsOption(brands, _brandId)) _brandId = null;
+          if (!_containsOption(mats, _matId)) _matId = null;
+          if (!_containsOption(supps, _suppId)) _suppId = null;
+          _optionsError = null;
           _loadingOpts = false;
         });
       }
-    } catch (_) {
-      if (mounted) setState(() => _loadingOpts = false);
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _optionsError = e is ApiException ? e.message : 'Failed to load options';
+          _loadingOpts = false;
+        });
+      }
     }
   }
 
-  Future<void> _pickImage(bool gallery) async {
-    final token = context.read<AuthProvider>().token;
-    final f = await ImagePicker().pickImage(
-      source: ImageSource.gallery,
-      imageQuality: 80,
-    );
-    if (f == null) return;
-    if (!gallery) {
-      setState(() => _imageFile = File(f.path));
-      return;
-    }
+  bool _containsOption(List<dynamic> items, String? id) {
+    if (id == null) return true;
+    return items.any((item) => item is Map && item['id']?.toString() == id);
+  }
 
-    setState(() => _saving = true);
+  Future<void> _pickImage(bool gallery) async {
+    if (_saving) return;
+    final token = context.read<AuthProvider>().token;
     try {
+      final f = await ImagePicker().pickImage(
+        source: ImageSource.gallery,
+        // Keep phone photos small enough for a reliable upload while retaining
+        // enough quality for product images.
+        maxWidth: 1600,
+        maxHeight: 1600,
+        imageQuality: 75,
+      );
+      if (!mounted || f == null) return;
+      if (!gallery) {
+        setState(() => _imageFile = File(f.path));
+        return;
+      }
+
+      setState(() => _saving = true);
       final client = ApiClient(token: token);
       final res = await client.uploadMultipart(
         ApiConfig.uploadEndpoint,
@@ -288,17 +326,35 @@ class _AddProductScreenState extends State<AddProductScreen> {
         fileField: 'file',
         fields: {'folder': 'products/gallery'},
       );
-      if (mounted) setState(() => _gallery.add(res['url']));
+      final url = res['url']?.toString().trim() ?? '';
+      if (url.isEmpty) {
+        throw const ApiException(
+          statusCode: 500,
+          message: 'The image upload returned no image URL.',
+        );
+      }
+      if (mounted) setState(() => _gallery.add(url));
+    } on ApiException catch (e) {
+      if (mounted) _snack('Image upload failed: ${e.message}');
     } catch (e) {
-      if (mounted) _snack('Upload failed: $e');
+      if (mounted) _snack('Image upload failed. Please try again.');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
   }
 
   Future<void> _save() async {
+    if (_loadingFullProduct) {
+      _snack('Please wait for the product details to finish loading.');
+      return;
+    }
     if (!_formKey.currentState!.validate()) {
       _snack('Please fill all required fields');
+      return;
+    }
+    final validationError = _validateProductForm();
+    if (validationError != null) {
+      _snack(validationError);
       return;
     }
     setState(() => _saving = true);
@@ -312,7 +368,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
           fileField: 'file',
           fields: {'folder': 'products'},
         );
-        _imageUrl = res['url'];
+        final url = res['url']?.toString().trim() ?? '';
+        if (url.isEmpty) {
+          throw const ApiException(
+            statusCode: 500,
+            message: 'The main image upload returned no image URL.',
+          );
+        }
+        _imageUrl = url;
       }
 
       final specs = <String, String>{};
@@ -343,8 +406,14 @@ class _AddProductScreenState extends State<AddProductScreen> {
         'showInNewArrivals': _newArrivals,
         'showInForYou': _forYou,
         'specs': specs,
-        'similarProductIds': _relatedProducts.map((p) => p['id']).toList(),
-        'orderedSimilarIds': _relatedProducts.map((p) => p['id']).toList(),
+        'similarProductIds': _relatedProducts
+            .map((p) => p['id']?.toString())
+            .whereType<String>()
+            .toList(),
+        'orderedSimilarIds': _relatedProducts
+            .map((p) => p['id']?.toString())
+            .whereType<String>()
+            .toList(),
       };
 
       if (!_isEdit) {
@@ -434,11 +503,47 @@ class _AddProductScreenState extends State<AddProductScreen> {
         );
         Navigator.pop(context, true);
       }
-    } catch (e) {
-      if (mounted) _snack('Save failed: $e');
+    } on ApiException catch (e) {
+      if (mounted) _snack('Save failed: ${e.message}');
+    } catch (_) {
+      if (mounted) _snack('Save failed. Please try again.');
     } finally {
       if (mounted) setState(() => _saving = false);
     }
+  }
+
+  String? _validateProductForm() {
+    final price = double.tryParse(_priceCtrl.text.trim());
+    if (price == null || price <= 0) {
+      return 'Enter a valid product price greater than zero.';
+    }
+
+    final compareAt = double.tryParse(_compareCtrl.text.trim());
+    if (_compareCtrl.text.trim().isNotEmpty &&
+        (compareAt == null || compareAt < 0)) {
+      return 'Enter a valid compare-at price.';
+    }
+    if (compareAt != null && compareAt > 0 && compareAt < price) {
+      return 'Compare-at price cannot be lower than the selling price.';
+    }
+
+    if (!_isEdit) {
+      final purchasePrice = double.tryParse(_supplierPriceCtrl.text.trim());
+      if (purchasePrice == null || purchasePrice < 0) {
+        return 'Enter a valid wholesale purchase price.';
+      }
+      final stock = int.tryParse(_stockCtrl.text.trim());
+      if (stock == null || stock < 0) {
+        return 'Enter a valid initial stock quantity.';
+      }
+    }
+
+    final minStock = int.tryParse(_minStockCtrl.text.trim());
+    if (_minStockCtrl.text.trim().isNotEmpty &&
+        (minStock == null || minStock < 0)) {
+      return 'Enter a valid low-stock threshold.';
+    }
+    return null;
   }
 
   void _snack(String m, {bool ok = false}) =>
@@ -528,6 +633,27 @@ class _AddProductScreenState extends State<AddProductScreen> {
             ],
           )
         else ...[
+          if (_optionsError != null)
+            Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      _optionsError!,
+                      style: GoogleFonts.inter(
+                        fontSize: 12,
+                        color: AppColors.error,
+                      ),
+                    ),
+                  ),
+                  TextButton(
+                    onPressed: _loadOptions,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
           Row(
             children: [
               Expanded(
@@ -994,7 +1120,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       children: [
         _buildSectionTitle('Main Product Image', LucideIcons.image),
         GestureDetector(
-          onTap: () => _pickImage(false),
+          onTap: _saving ? null : () => _pickImage(false),
           child: Container(
             height: 180,
             width: double.infinity,
@@ -1105,7 +1231,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
       child: Row(
         children: [
           GestureDetector(
-            onTap: () => _pickImage(true),
+            onTap: _saving ? null : () => _pickImage(true),
             child: Container(
               width: 90,
               height: 90,
@@ -1118,7 +1244,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
                   width: 2,
                 ),
               ),
-              child: Icon(LucideIcons.plus, color: AppColors.primaryDark),
+              child: _saving
+                  ? const CircularProgressIndicator(
+                      color: AppColors.primaryDark,
+                      strokeWidth: 2,
+                    )
+                  : Icon(LucideIcons.plus, color: AppColors.primaryDark),
             ),
           ),
           Expanded(
@@ -1213,6 +1344,34 @@ class _AddProductScreenState extends State<AddProductScreen> {
     );
   }
 
+  Widget _buildProductThumbnail(String? url) {
+    final imageUrl = url?.trim();
+    if (imageUrl == null || imageUrl.isEmpty) {
+      return Container(
+        width: 40,
+        height: 40,
+        color: AppColors.cardBorder,
+        child: const Icon(
+          LucideIcons.imageOff,
+          size: 16,
+          color: AppColors.textMuted,
+        ),
+      );
+    }
+    return CachedNetworkImage(
+      cacheManager: AppImageCacheManager.instance,
+      imageUrl: imageUrl,
+      width: 40,
+      height: 40,
+      fit: BoxFit.cover,
+      placeholder: (context, url) => Container(color: AppColors.cardBorder),
+      errorWidget: (context, url, error) => Container(
+        color: AppColors.cardBorder,
+        child: const Icon(LucideIcons.imageOff, size: 16),
+      ),
+    );
+  }
+
   Widget _buildStep3() {
     return _pageContainer(
       title: 'SEO & Visibility',
@@ -1272,22 +1431,8 @@ class _AddProductScreenState extends State<AddProductScreen> {
                               const SizedBox(width: 12),
                               ClipRRect(
                                 borderRadius: BorderRadius.circular(8),
-                                child: CachedNetworkImage(
-                                  cacheManager: AppImageCacheManager.instance,
-                                  imageUrl: p['image'],
-                                  width: 40,
-                                  height: 40,
-                                  fit: BoxFit.cover,
-                                  placeholder: (context, url) =>
-                                      Container(color: AppColors.cardBorder),
-                                  errorWidget: (context, url, error) =>
-                                      Container(
-                                        color: AppColors.cardBorder,
-                                        child: const Icon(
-                                          LucideIcons.imageOff,
-                                          size: 16,
-                                        ),
-                                      ),
+                                child: _buildProductThumbnail(
+                                  p['image']?.toString(),
                                 ),
                               ),
                               const SizedBox(width: 12),
@@ -1473,31 +1618,12 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                              secondary: imgUrl != null
-                                  ? ClipRRect(
-                                      borderRadius: BorderRadius.circular(6),
-                                      child: CachedNetworkImage(
-                                        cacheManager:
-                                            AppImageCacheManager.instance,
-                                        imageUrl: imgUrl.toString(),
-                                        width: 40,
-                                        height: 40,
-                                        fit: BoxFit.cover,
-                                      ),
-                                    )
-                                  : Container(
-                                      width: 40,
-                                      height: 40,
-                                      decoration: BoxDecoration(
-                                        color: AppColors.cardBorder,
-                                        borderRadius: BorderRadius.circular(6),
-                                      ),
-                                      child: const Icon(
-                                        LucideIcons.imageOff,
-                                        size: 16,
-                                        color: AppColors.textMuted,
-                                      ),
-                                    ),
+                              secondary: ClipRRect(
+                                borderRadius: BorderRadius.circular(6),
+                                child: _buildProductThumbnail(
+                                  imgUrl?.toString(),
+                                ),
+                              ),
                               onChanged: (val) {
                                 setState(() {
                                   if (val == true) {
@@ -1963,7 +2089,7 @@ class _AddProductScreenState extends State<AddProductScreen> {
                     Expanded(
                       flex: 2,
                       child: ElevatedButton(
-                        onPressed: _saving
+                        onPressed: _saving || _loadingFullProduct
                             ? null
                             : () {
                                 HapticFeedback.lightImpact();
@@ -1990,7 +2116,9 @@ class _AddProductScreenState extends State<AddProductScreen> {
                                 ),
                               )
                             : Text(
-                                _currentStep < _totalSteps - 1
+                                _loadingFullProduct
+                                    ? 'Loading...'
+                                    : _currentStep < _totalSteps - 1
                                     ? 'Next Step'
                                     : (_isEdit
                                           ? 'Save Changes'

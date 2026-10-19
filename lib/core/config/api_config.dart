@@ -37,6 +37,10 @@ class ApiConfig {
   static const String todosEndpoint = '$apiPrefix/auth/todos';
 
   // Timeouts
-  static const Duration connectionTimeout = Duration(seconds: 15);
+  static const Duration connectionTimeout = Duration(seconds: 30);
+  static const Duration mutationTimeout = Duration(seconds: 60);
+  // Image uploads can take longer than normal API requests, especially on
+  // mobile networks or while the server is waking up.
+  static const Duration uploadTimeout = Duration(seconds: 90);
   static const Duration receiveTimeout = Duration(seconds: 15);
 }
